@@ -1,0 +1,47 @@
+Jonnalagadda Nihit
+
+Overview
+Jonnalagadda Nihit is an aspiring software engineer with a strong academic background in Artificial Intelligence and Machine Learning (AI/ML). Currently pursuing a Bachelor of Technology in Computer Science with a specialization in AI/ML at Kalasalingam Academy of Research and Education, Nihit maintains an impressive GPA of 9.14/10. His technical expertise spans programming languages such as Java, Python, C, and SQL, alongside web development frameworks like React. Nihit is passionate about solving real-world problems through technology and building scalable, user-focused applications.
+
+Beyond his academic journey, Nihit is actively developing a Java GUI-based Expense Tracker App with MySQL integration, demonstrating his ability to combine backend and frontend development skills with database management. He is committed to continuous learning, particularly in AI/ML, software optimization, and full-stack development, with the goal of becoming a well-rounded and impactful software engineer.
+
+Early Life and Education
+Born and raised in India, Nihit displayed an early interest in computers and problem-solving. He joined Kalasalingam Academy of Research and Education in 2022 to pursue his B.Tech in Computer Science (AI/ML), where he gained hands-on experience in software development, data structures, machine learning algorithms, and cloud technologies. His consistent academic performance reflects his dedication to mastering both theoretical concepts and practical applications.
+
+Projects and Technical Work
+
+Expense Tracker Application (Java + MySQL)
+Developed a GUI-based personal finance management tool that allows users to track expenses, generate reports, and manage budgets efficiently. Integrated MySQL for secure and scalable data storage.
+
+AI/ML Projects
+
+Implemented a machine learning model for predictive analytics in small datasets using Python’s Scikit-learn.
+
+Worked on image classification using Convolutional Neural Networks (CNNs) with TensorFlow/Keras.
+
+Web Development
+Built dynamic web pages and single-page applications using React, incorporating REST APIs for real-time data fetching.
+
+Database Management
+Designed and optimized relational database schemas, implemented CRUD operations, and ensured efficient data retrieval using SQL queries.
+
+Skills and Expertise
+
+Programming Languages: Java, Python, C, SQL
+
+Web Technologies: HTML, CSS, JavaScript, React
+
+Databases: MySQL
+
+AI/ML Tools: TensorFlow, Keras, Scikit-learn, Pandas, NumPy
+
+Other Skills: Git/GitHub, API integration, problem-solving, software optimization
+
+Philosophy and Vision
+Nihit believes in the principle that technology should empower people to achieve more with less complexity. His personal philosophy revolves around consistent learning, curiosity-driven exploration, and building solutions that are both technically robust and user-friendly. He envisions a career where he can work on AI-driven innovations that address real-world challenges while mentoring and inspiring upcoming developers.
+
+External Links
+
+LinkedIn: linkedin.com/in/jonnalagadda-nihit-918027284
+
+GitHub: github.com/Nihit303

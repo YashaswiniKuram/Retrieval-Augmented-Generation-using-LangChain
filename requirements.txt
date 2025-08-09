@@ -1,0 +1,7 @@
+getpass
+dotenv
+langchain
+langchain-chroma
+langchain-community
+langchain_google_genai # if using Google Gemini
+chromadb
