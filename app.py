@@ -1,49 +1,44 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import os
-import getpass
 import dotenv
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.document_loaders import TextLoader, PyPDFLoader, Docx2txtLoader
 from langchain_community.vectorstores import Chroma
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
+from chromadb.config import Settings
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from werkzeug.utils import secure_filename
-import json
 
 # Load environment variables
 dotenv.load_dotenv()
 
-# Ensure API key exists
-if not os.environ.get("GOOGLE_API_KEY"):
-    os.environ["GOOGLE_API_KEY"] = getpass.getpass("Enter Google API Key: ")
-
 app = Flask(__name__)
 CORS(app)
 
-# Configuration
+# ----------------------- CONFIGURATION -----------------------
 UPLOAD_FOLDER = 'Docs'
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'doc', 'docx'}
-MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
+MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
-# Paths
 current_dir = os.path.dirname(os.path.abspath(__file__))
 books_dir = os.path.join(current_dir, "Docs")
 db_dir = os.path.join(current_dir, "db")
 persistent_directory = os.path.join(db_dir, "chroma_db")
 
-# Ensure directories exist
 os.makedirs(books_dir, exist_ok=True)
 os.makedirs(db_dir, exist_ok=True)
 
+# ----------------------- HELPERS -----------------------
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
 def get_document_loader(file_path, file_extension):
-    """Get appropriate document loader based on file extension"""
     if file_extension.lower() == 'txt':
         return TextLoader(file_path, encoding="utf-8")
     elif file_extension.lower() == 'pdf':
@@ -53,216 +48,174 @@ def get_document_loader(file_path, file_extension):
     else:
         raise ValueError(f"Unsupported file type: {file_extension}")
 
+
+def get_embeddings():
+    return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+
+def chroma_settings():
+    return Settings(
+        persist_directory=persistent_directory,
+        anonymized_telemetry=False   # Disable Chroma telemetry
+    )
+
+
 def get_vector_store():
-    """Get or create the Chroma vector store"""
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    
+    embeddings = get_embeddings()
     if os.path.exists(persistent_directory):
         return Chroma(
             persist_directory=persistent_directory,
-            embedding_function=embeddings
+            embedding_function=embeddings,
+            client_settings=chroma_settings()
         )
-    else:
-        return None
+    return None
+
 
 def process_documents():
-    """Process all documents in the Docs folder and create/update vector store"""
-    if not os.path.exists(books_dir):
-        return False
-    
-    # Get all supported file types
-    supported_files = []
-    for f in os.listdir(books_dir):
-        if any(f.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
-            supported_files.append(f)
-    
+    supported_files = [
+        f for f in os.listdir(books_dir)
+        if any(f.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS)
+    ]
+
     if not supported_files:
         return False
-    
+
     documents = []
-    for book_file in supported_files:
+    for file in supported_files:
         try:
-            file_path = os.path.join(books_dir, book_file)
-            file_extension = book_file.rsplit('.', 1)[1].lower()
-            
+            file_path = os.path.join(books_dir, file)
+            file_extension = file.rsplit('.', 1)[1].lower()
+
             loader = get_document_loader(file_path, file_extension)
-            book_docs = loader.load()
-            
-            for doc in book_docs:
-                doc.metadata = {"source": book_file, "type": file_extension}
-                documents.append(doc)
-                
+            file_docs = loader.load()
+
+            for doc in file_docs:
+                doc.metadata = {"source": file, "type": file_extension}
+            documents.extend(file_docs)
+
         except Exception as e:
-            print(f"Error processing {book_file}: {str(e)}")
+            print(f"Error processing {file}: {e}")
             continue
-    
-    if not documents:
-        return False
-    
+
     text_splitter = CharacterTextSplitter(chunk_size=1024, chunk_overlap=24)
     docs = text_splitter.split_documents(documents)
-    
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    
-    # Create or update the vector store
-    db = Chroma.from_documents(docs, embeddings, persist_directory=persistent_directory)
+
+    embeddings = get_embeddings()
+    db = Chroma.from_documents(
+        docs,
+        embeddings,
+        persist_directory=persistent_directory,
+        client_settings=chroma_settings()
+    )
     db.persist()
-    
     return True
 
+
+# ----------------------- ROUTES -----------------------
 @app.route('/')
 def index():
-    """Serve the main HTML page"""
     return render_template('index.html')
+
 
 @app.route('/api/documents', methods=['GET'])
 def list_documents():
-    """GET endpoint for listing available documents"""
     try:
-        if not os.path.exists(books_dir):
-            return jsonify({"documents": [], "message": "No documents directory found"})
-        
-        documents = []
-        for filename in os.listdir(books_dir):
-            if any(filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
-                file_path = os.path.join(books_dir, filename)
-                file_size = os.path.getsize(file_path)
-                file_extension = filename.rsplit('.', 1)[1].lower()
-                
-                documents.append({
-                    "filename": filename,
-                    "type": file_extension,
-                    "size_bytes": file_size,
-                    "size_mb": round(file_size / (1024 * 1024), 2)
-                })
-        
-        return jsonify({
-            "documents": documents,
-            "count": len(documents),
-            "message": "Documents retrieved successfully"
-        })
-    
+        files = [
+            {
+                "filename": f,
+                "type": f.rsplit('.', 1)[1].lower(),
+                "size_mb": round(os.path.getsize(os.path.join(books_dir, f)) / (1024 * 1024), 2)
+            }
+            for f in os.listdir(books_dir)
+            if any(f.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS)
+        ]
+
+        return jsonify({"documents": files, "count": len(files)})
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/upload', methods=['POST'])
 def upload_document():
-    """POST endpoint for uploading and processing new documents"""
     try:
-        if 'file' not in request.files:
-            return jsonify({"error": "No file part"}), 400
-        
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({"error": "No file selected"}), 400
-        
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file_path = os.path.join(books_dir, filename)
-            
-            # Save the file
-            file.save(file_path)
-            
-            # Process all documents and update vector store
-            success = process_documents()
-            
-            if success:
-                return jsonify({
-                    "message": "Document uploaded and processed successfully",
-                    "filename": filename,
-                    "vector_store_updated": True
-                }), 200
-            else:
-                return jsonify({
-                    "message": "Document uploaded but vector store update failed",
-                    "filename": filename,
-                    "vector_store_updated": False
-                }), 200
-        else:
-            return jsonify({"error": f"Invalid file type. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}"}), 400
-    
+        file = request.files.get("file")
+        if not file:
+            return jsonify({"error": "No file provided"}), 400
+
+        if not allowed_file(file.filename):
+            return jsonify({"error": "Invalid file type"}), 400
+
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(books_dir, filename)
+        file.save(file_path)
+
+        success = process_documents()
+
+        return jsonify({
+            "message": "File uploaded",
+            "processed": success,
+            "filename": filename
+        })
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/ask', methods=['POST'])
 def ask_question():
-    """POST endpoint for asking questions (similar to QNA.py)"""
     try:
         data = request.get_json()
-        if not data or 'question' not in data:
+        question = data.get("question")
+
+        if not question:
             return jsonify({"error": "Question is required"}), 400
-        
-        question = data['question']
-        
-        # Get the vector store
+
         db = get_vector_store()
         if not db:
-            return jsonify({"error": "Vector store not found. Please upload documents first."}), 404
-        
-        # Retrieve relevant documents
-        retriever = db.as_retriever(
-            search_type="similarity",
-            search_kwargs={"k": 3},
-        )
+            return jsonify({"error": "Vector store empty. Upload documents first."}), 404
+
+        retriever = db.as_retriever(search_type="similarity", search_kwargs={"k": 3})
         relevant_docs = retriever.invoke(question)
-        
-        # Combine the query and relevant documents
-        combined_input = (
-            "Here are some documents that might help answer the question: "
-            + question
-            + "\n\nRelevant Documents:\n"
-            + "\n\n".join([doc.page_content for doc in relevant_docs])
-            + "\n\nPlease provide a comprehensive answer based only on the provided documents. "
-              "If the answer is not found in the documents, respond with 'I'm not sure'."
+
+        combined = (
+            question + "\n\nRelevant Docs:\n" +
+            "\n\n".join([doc.page_content for doc in relevant_docs]) +
+            "\n\nAnswer only using the above data. If unsure, say 'I'm not sure'."
         )
-        
-        # Create Gemini model and get response
-        model = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            convert_system_message_to_human=True
-        )
-        messages = [
-            SystemMessage(content="You are a helpful AI assistant that helps in retrieval of information from complex documents. Provide accurate answers based only on the provided documents."),
-            HumanMessage(content=combined_input),
-        ]
-        
-        result = model.invoke(messages)
-        
-        # Prepare response with metadata
-        response_data = {
+
+        model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", convert_system_message_to_human=True)
+
+        result = model.invoke([
+            SystemMessage(content="You answer strictly from the provided documents."),
+            HumanMessage(content=combined)
+        ])
+
+        return jsonify({
             "question": question,
             "answer": result.content,
-            "sources": [doc.metadata.get('source', 'Unknown') for doc in relevant_docs],
-            "relevant_chunks": len(relevant_docs)
-        }
-        
-        return jsonify(response_data), 200
-    
+            "sources": [doc.metadata.get("source") for doc in relevant_docs]
+        })
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    try:
-        db = get_vector_store()
-        vector_store_status = "available" if db else "not_found"
-        
-        return jsonify({
-            "status": "healthy",
-            "vector_store": vector_store_status,
-            "documents_directory": books_dir,
-            "vector_store_directory": persistent_directory
-        }), 200
-    
-    except Exception as e:
-        return jsonify({"status": "unhealthy", "error": str(e)}), 500
 
+@app.route('/api/health')
+def health():
+    return jsonify({
+        "status": "ok",
+        "vector_store": "available" if get_vector_store() else "empty",
+        "docs_dir": books_dir,
+        "db_dir": persistent_directory
+    })
+
+
+# ----------------------- MAIN -----------------------
 if __name__ == '__main__':
-    # Initialize vector store if documents exist
-    if os.path.exists(books_dir) and os.listdir(books_dir):
+    if os.listdir(books_dir):
         print("Initializing vector store...")
         process_documents()
-        print("Vector store initialized successfully!")
-    
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+        print("Vector store Ready.")
+
+    app.run(debug=True, host="0.0.0.0", port=5000)
